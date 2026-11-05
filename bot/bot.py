@@ -131,6 +131,43 @@ def esc(s):
 # ----------------------------------------------------------------- GitHub storage
 
 GH_H = {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github+json"}
+GH_FALLBACK_TOKEN = os.environ.get("GH_FALLBACK_TOKEN", "").strip()
+USING_FALLBACK_TOKEN = False
+
+
+def select_github_token():
+    """Fall back to the workflow token when the configured one is missing or revoked.
+
+    Otherwise the bot silently loses every state and content save.
+    """
+    global GH_TOKEN, USING_FALLBACK_TOKEN
+    if GH_TOKEN:
+        try:
+            req = urllib.request.Request(f"https://api.github.com/repos/{GH_REPO}", headers=GH_H)
+            urllib.request.urlopen(req, timeout=20).read()
+            return
+        except urllib.error.HTTPError as e:
+            if e.code not in (401, 403):
+                return
+        except Exception:
+            return
+    if GH_FALLBACK_TOKEN:
+        log.warning("GH_TOKEN is missing or rejected; using the workflow token. Update the GH_PAT secret or remove it.")
+        GH_TOKEN = GH_FALLBACK_TOKEN
+        GH_H["Authorization"] = f"token {GH_TOKEN}"
+        USING_FALLBACK_TOKEN = True
+
+
+def trigger_deploy():
+    """Commits made with the workflow token do not fire push workflows, so start the deploy explicitly."""
+    if not USING_FALLBACK_TOKEN:
+        return
+    try:
+        req = urllib.request.Request(f"https://api.github.com/repos/{GH_REPO}/actions/workflows/deploy.yml/dispatches",
+                                     data=json.dumps({"ref": GH_BRANCH}).encode(), headers={**GH_H, "Content-Type": "application/json"}, method="POST")
+        urllib.request.urlopen(req, timeout=20).read()
+    except Exception as e:
+        log.warning("deploy dispatch failed: %s", e)
 
 
 def default_state():
@@ -357,6 +394,7 @@ class Store:
         self.data["updated_at"] = dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
         with self._lock:
             self.sha = self._put(DATA_PATH, self.data, self.sha, f"admin-bot: {msg}")
+        trigger_deploy()
         self.state.setdefault("log", []).append({"t": self.data["updated_at"], "msg": msg})
         self.state["log"] = self.state["log"][-200:]
         self.save_state(silent=True)
@@ -1240,7 +1278,7 @@ def bridge_listener(stop):
         since = "12h"
         store.state["bridge_topic"] = topic
         store.state["bridge_since"] = since
-        mark_dirty()
+        store.save_state(silent=True)
     while not stop["flag"]:
         try:
             req = urllib.request.Request(NTFY + topic + "/json?since=" + urllib.parse.quote(str(since)), headers={"User-Agent": "site-admin-bot"})
@@ -1795,6 +1833,7 @@ def main():
         tg("deleteWebhook", drop_pending_updates=False)
     except Exception as e:
         log.warning("deleteWebhook failed: %s", e)
+    select_github_token()
     try:
         store.load()
     except Exception as e:
