@@ -1234,6 +1234,13 @@ def bridge_listener(stop):
         log.error("bridge disabled: BRIDGE_PRIVATE_KEY or the cryptography package is missing")
         return
     since = store.state.get("bridge_since") or "5m"
+    if store.state.get("bridge_topic") != topic:
+        # A saved position belongs to the previous topic, and ntfy returns nothing
+        # for an unknown id. Read everything ntfy still holds for the new one.
+        since = "12h"
+        store.state["bridge_topic"] = topic
+        store.state["bridge_since"] = since
+        mark_dirty()
     while not stop["flag"]:
         try:
             req = urllib.request.Request(NTFY + topic + "/json?since=" + urllib.parse.quote(str(since)), headers={"User-Agent": "site-admin-bot"})
