@@ -1,5 +1,6 @@
 /* Eurotour live chat (standalone page). Transport: ntfy.sh pub/sub.
-   visitor → INBOX topic (JSON or file+meta); bot → INBOX-r-<sid> topic. */
+   visitor → INBOX topic; bot → INBOX-r-<sid> topic. Topics are public, so all
+   messages and files are end-to-end encrypted (see et-crypto.js). */
 (function () {
   'use strict';
   var NTFY = 'https://ntfy.sh/';
@@ -10,7 +11,7 @@
     status: $('status'), dot: $('dot'), title: $('title'), ava: $('ava'), menu: $('menu'), menuBtn: $('menuBtn'), closeBtn: $('closeBtn'), back: $('back'),
     file: $('file'), attach: $('attach'), strip: $('strip'), jump: $('jump'), jumpN: $('jumpN'), offline: $('offline'), toast: $('toast'),
     lightbox: $('lightbox'), lbImg: $('lbImg'), lbDl: $('lbDl'), lbClose: $('lbClose') };
-  if (!INBOX) { el.list.innerHTML = '<div class="ch__sys">Чат тимчасово недоступний</div>'; return; }
+  if (!INBOX || !window.EtCrypto || !window.EtCrypto.available) { el.list.innerHTML = '<div class="ch__sys">Чат тимчасово недоступний</div>'; return; }
 
   /* ---------- identity & storage ---------- */
   var K = { sid: 'et_chat_sid', hist: 'et_chat_hist2', name: 'et_chat_name', last: 'et_chat_last', mgr: 'et_chat_mgr', unread: 'et_chat_unread' };
@@ -26,7 +27,13 @@
   var lastId = ls(K.last) || '';
   var manager = null; try { manager = JSON.parse(ls(K.mgr) || 'null'); } catch (e) {}
   var ended = false;
-  function save() { ls(K.hist, JSON.stringify(hist.slice(-150))); }
+  // decrypted files live in blob: URLs that die with the page, so they are not persisted
+  function save() {
+    ls(K.hist, JSON.stringify(hist.slice(-150).map(function (m) {
+      if (!m.att || !/^blob:/.test(m.att.url || '')) return m;
+      return Object.assign({}, m, { att: Object.assign({}, m.att, { url: '' }) });
+    })));
+  }
 
   /* ---------- helpers ---------- */
   function isValidContact(val) {
@@ -122,26 +129,30 @@
 
   /* ---------- transport ---------- */
   function publishJson(obj) {
-    return fetch(NTFY + INBOX, { method: 'POST', body: JSON.stringify(obj), headers: { 'Content-Type': 'application/json', 'Title': obj.kind || 'event' } }).then(function (r) { if (r.status === 429 && obj.kind === 'chat') toast('Забагато повідомлень поспіль — зачекайте хвилину'); return r.ok; }).catch(function () { return false; });
+    return window.EtCrypto.seal(obj).then(function (body) { return fetch(NTFY + INBOX, { method: 'POST', body: body, headers: { 'Content-Type': 'application/json' } }); }).then(function (r) { if (r.status === 429 && obj.kind === 'chat') toast('Забагато повідомлень поспіль — зачекайте хвилину'); return r.ok; }).catch(function () { return false; });
   }
-  function b64utf8(s) { return btoa(unescape(encodeURIComponent(s))); }
   function publishFile(file, obj, onProgress) {
+    return window.EtCrypto.sealFile(file).then(function (enc) {
+      obj.file = Object.assign({}, obj.file, { key: enc.key, iv: enc.iv });
+      return window.EtCrypto.seal(obj).then(function (env) { return uploadSealed(enc.blob, env, onProgress); });
+    }).catch(function () { return null; });
+  }
+  function uploadSealed(blob, env, onProgress) {
     return new Promise(function (resolve) {
       var x = new XMLHttpRequest();
       x.open('PUT', NTFY + INBOX, true);
-      x.setRequestHeader('Title', 'chat');
-      x.setRequestHeader('Filename', file.name || ('photo-' + Date.now() + '.jpg'));
-      x.setRequestHeader('Message', '=?UTF-8?B?' + b64utf8(JSON.stringify(obj)) + '?=');
+      x.setRequestHeader('Filename', 'data.bin');
+      x.setRequestHeader('Message', env);
       x.upload.onprogress = function (e) { if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100)); };
       x.onload = function () { var r = null; try { r = JSON.parse(x.responseText); } catch (e) {} if (x.status === 413) toast('Файл завеликий (макс. 2 МБ)'); else if (x.status === 429) toast('Ліміт надсилання файлів — спробуйте за кілька хвилин'); resolve(x.status >= 200 && x.status < 300 ? (r || {}) : null); };
       x.onerror = function () { resolve(null); };
-      x.send(file);
+      x.send(blob);
     });
   }
   var lastTyping = 0;
   function sendTyping() { var n = Date.now(); if (n - lastTyping < 4000) return; lastTyping = n; publishJson(Object.assign({ kind: 'chat_typing' }, meta())); }
 
-  var es = null, reconnectT = null;
+  var es = null, reconnectT = null, incoming = Promise.resolve();
   function connect() {
     if (es) { try { es.close(); } catch (e) {} }
     var since = lastId || '24h';
@@ -151,9 +162,18 @@
       var d; try { d = JSON.parse(ev.data); } catch (e) { return; }
       if (d.event !== 'message') return;
       if (d.id && d.id === lastId) return;
-      var p = {}; try { p = JSON.parse(d.message || '{}'); } catch (e) { p = { text: d.message }; }
-      if (d.attachment) p.attachment = d.attachment;
-      handleIncoming(p, d.id, d.time ? d.time * 1000 : Date.now());
+      // decrypting is async: chain the events so they stay in arrival order
+      incoming = incoming.then(function () { return window.EtCrypto.openEvent(d); }).then(function (p) {
+        if (p.file && d.attachment && d.attachment.url) {
+          return window.EtCrypto.openFile(d.attachment.url, p.file.iv, p.file.type).then(function (blob) {
+            p.attachment = { name: p.file.name, size: p.file.size, type: p.file.type, url: URL.createObjectURL(blob) };
+            return p;
+          });
+        }
+        return p;
+      }).then(function (p) {
+        handleIncoming(p, d.id, d.time ? d.time * 1000 : Date.now());
+      }).catch(function (e) { if (window.console) console.warn('chat event skipped:', e && e.message); });
     };
     es.onerror = function () { /* auto-reconnect by browser */ };
   }
@@ -297,7 +317,7 @@
     var payload = Object.assign({ kind: 'chat', text: caption || '', mid: m.id, first: firstOut(), file: { name: file.name, size: file.size, type: file.type } }, meta());
     return publishFile(file, payload, function (p) { m.progress = p; var bar = el.list.querySelector('[data-id="' + m.id + '"] .ch__progress i'); if (bar) bar.style.width = p + '%'; }).then(function (r) {
       m.uploading = false;
-      if (r) { m.sent = true; if (r.attachment) m.att.url = r.attachment.url; } else { m.failed = true; toast('Не вдалося надіслати файл'); }
+      if (r) { m.sent = true; try { m.att.url = URL.createObjectURL(file); } catch (e) {} } else { m.failed = true; toast('Не вдалося надіслати файл'); }
       save(); render();
     });
   }

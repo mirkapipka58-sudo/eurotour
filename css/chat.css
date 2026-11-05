@@ -233,3 +233,14 @@ body { background: #120b3a; }
 .ch__bub:has(.ch__meta) { padding-right: 12px; }
 .ch__meta--out .ch__meta { top: 0; }
 @media (max-width: 767px) { .ch__jump { bottom: 96px; } }
+
+/* Narrow screens: the contact field gets its own line, and the status has room to fit. */
+@media (max-width: 560px) {
+  .ch__name-row { flex-direction: column; align-items: stretch; gap: 6px; }
+  .ch__name-row label { white-space: normal; line-height: 1.3; }
+  .ch__name-row input { flex: none; width: 100%; box-sizing: border-box; }
+  .ch__close { display: none; }
+}
+@media (max-width: 360px) {
+  .ch__status { height: auto; white-space: normal; overflow: visible; font-size: 11px; }
+}

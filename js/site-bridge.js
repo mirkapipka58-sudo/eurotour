@@ -1,10 +1,11 @@
 /* Bridge: site → Telegram bot (leads + live chat) via ntfy.sh pub/sub.
-   The bot subscribes to INBOX topic; replies to a visitor arrive on a per-visitor topic. */
+   The bot subscribes to INBOX topic; replies to a visitor arrive on a per-visitor topic.
+   Topic names are public, so every payload is end-to-end encrypted (see et-crypto.js). */
 (function () {
   'use strict';
   var NTFY = 'https://ntfy.sh/';
   var CFG = window.__SITE_BRIDGE || {};
-  var INBOX = CFG.inbox;            // secret topic name (from data/site.json -> bridge.inbox)
+  var INBOX = CFG.inbox;            // public topic name; payloads are encrypted
   if (!INBOX) return;
 
   var SID_KEY = 'et_chat_sid';
@@ -26,9 +27,10 @@
   var REPLY_TOPIC = INBOX + '-r-' + SESSION;
 
   function publish(obj) {
-    var body = JSON.stringify(obj);
-    return fetch(NTFY + INBOX, { method: 'POST', body: body, headers: { 'Content-Type': 'application/json', 'Title': obj.kind || 'event' }, keepalive: true })
-      .then(function (r) { return r.ok; }).catch(function () { return false; });
+    if (!window.EtCrypto || !window.EtCrypto.available) return Promise.resolve(false);
+    return window.EtCrypto.seal(obj).then(function (body) {
+      return fetch(NTFY + INBOX, { method: 'POST', body: body, headers: { 'Content-Type': 'application/json' }, keepalive: body.length < 60000 });
+    }).then(function (r) { return r.ok; }).catch(function () { return false; });
   }
 
   function baseMeta() {
@@ -58,8 +60,12 @@
   // retry queued leads
   try {
     var pending = JSON.parse(localStorage.getItem('et_lead_queue') || '[]');
-    pending.forEach(function (p) { publish(p); });
-    if (pending.length) localStorage.setItem('et_lead_queue', '[]');
+    pending.forEach(function (p) {
+      publish(p).then(function (ok) {
+        if (!ok) return;
+        try { var q3 = JSON.parse(localStorage.getItem('et_lead_queue') || '[]').filter(function (x) { return x.ts !== p.ts; }); localStorage.setItem('et_lead_queue', JSON.stringify(q3)); } catch (e) {}
+      });
+    });
   } catch (e) {}
 
   /* ---------------- Chat entry (separate page chat.html) ---------------- */
@@ -92,8 +98,8 @@
             var d = JSON.parse(ev.data);
             if (d.event !== 'message' || !d.id || d.id === lastSeenId || seenIds[d.id]) return;
             seenIds[d.id] = 1;
-            var p = {}; try { p = JSON.parse(d.message || '{}'); } catch (e) { p = { text: d.message }; }
-            if (p.text || d.attachment || p.joined) setUnread(unread + 1);
+            if (!window.EtCrypto) return;
+            window.EtCrypto.openEvent(d).then(function (p) { if (p.text || p.file || p.joined) setUnread(unread + 1); }).catch(function () {});
           } catch (e) {}
         };
       } catch (e) {}

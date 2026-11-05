@@ -18,12 +18,13 @@
     var tg = c.telegram || '', wa = c.whatsapp || (c.phone ? 'https://wa.me/' + digits(c.phone) : ''), tel = c.phone ? 'tel:+' + digits(c.phone) : '';
     var MAIN = '380636881604';
     function isMain(a) { var h = a.getAttribute('href') || ''; return !/\d{9,}/.test(h) || h.indexOf(MAIN) !== -1; }
-    document.querySelectorAll('a[href*="t.me/"]').forEach(function (a) { if (tg && isMain(a)) a.href = tg; });
+    document.querySelectorAll('a[href*="t.me/"]:not([data-tg-fixed])').forEach(function (a) { if (tg && isMain(a)) a.href = tg; });
+    function setTgCard(sel, url) { var a = document.querySelector(sel); var mm = /t\.me\/([\w_]+)/.exec(url || ''); if (a && mm) { a.href = url; var v = a.querySelector('.et-ccard__value'); if (v) v.textContent = '@' + mm[1]; } }
+    setTgCard('.et-ccard--tg-admin', tg); setTgCard('.et-ccard--tg-owner', c.telegram_owner);
     document.querySelectorAll('a[href*="wa.me/"], a[href*="whatsapp"]').forEach(function (a) { if (wa && isMain(a)) a.href = wa; });
     document.querySelectorAll('a[href^="tel:"]').forEach(function (a) { if (tel && isMain(a)) a.href = tel; });
     document.querySelectorAll('.et-header-phone, .et-footer-phone, .et-mobile-contact--ph span, .et-ccard--ph .et-ccard__value, .et-ccard--wa .et-ccard__value').forEach(function (el) { if (c.phone_display) el.textContent = c.phone_display; });
-    var tgv = document.querySelector('.et-ccard--tg .et-ccard__value'); if (tgv && tg) { var m = /t\.me\/([\w_]+)/.exec(tg); if (m) tgv.textContent = '@' + m[1]; }
-    document.querySelectorAll('.header__phone-subtitle').forEach(function (el) { if (c.support_note) el.textContent = c.support_note; });
+        document.querySelectorAll('.header__phone-subtitle').forEach(function (el) { if (c.support_note) el.textContent = c.support_note; });
     window.__siteContacts = { telegram: tg, whatsapp: wa, phone: c.phone || '' };
   }
 

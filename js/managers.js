@@ -76,8 +76,14 @@
         }
         return '<div class="et-footer-mgr">' + phoneHtml +
           '<span class="footer__contacts-note">' + esc(m.name) + ' · менеджер · <a data-mgr-direct="1" href="' + esc(link(m, 'tg')) + '" target="_blank" rel="noopener noreferrer">Telegram</a> · <a data-mgr-direct="1" href="' + esc(link(m, 'wa')) + '" target="_blank" rel="noopener noreferrer">WhatsApp</a></span></div>';
-      }).join('');
+      }).join('') + tgRoles();
     });
+  }
+  function tgRoles() {
+    var c = (window.__siteData && window.__siteData.contacts) || {};
+    var admin = c.telegram || 'https://t.me/pereviznyk001', owner = c.telegram_owner || 'https://t.me/pereviznyk_support';
+    function row(role, url) { var h = (/t\.me\/([\w_]+)/.exec(url) || [])[1] || ''; return '<span class="footer__contacts-note">' + role + ' · <a data-mgr-direct="1" data-tg-fixed href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">@' + esc(h) + '</a></span>'; }
+    return '<div class="footer__tg-roles">' + row('Адміністратор', admin) + row('Власник', owner) + '</div>';
   }
   function renderMobile() {
     var box = document.querySelector('.et-mobile-mgrs');

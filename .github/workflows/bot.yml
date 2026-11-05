@@ -52,6 +52,10 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install bot dependencies
+        if: steps.guard.outputs.skip != 'true'
+        run: python -m pip install --disable-pip-version-check "cryptography==50.0.2"
+
       - name: Run bot (exits after 5h20m)
         if: steps.guard.outputs.skip != 'true'
         env:
@@ -65,6 +69,8 @@ jobs:
           # Optional but recommended: add repository secret STATE_SECRET to store
           # bot/state.json encrypted instead of only public-redacted runtime offsets.
           STATE_SECRET: ${{ secrets.STATE_SECRET }}
+          # Private half of the site bridge key. The public half is in data/site.json.
+          BRIDGE_PRIVATE_KEY: ${{ secrets.BRIDGE_PRIVATE_KEY }}
           NOTIFY_START: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
         run: python bot/bot.py
 

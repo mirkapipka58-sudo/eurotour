@@ -1,0 +1,69 @@
+/* Layout fixes. Loaded last, so it overrides the older theme files. */
+
+/* Hero: no deliberate blur, and a darker overlay so white text stays readable on the white van. */
+html body #main-search-route .front-sec__banner-sec .front-sec__bg { filter: none !important; transform: none !important; object-position: center 40%; }
+html body #main-search-route .front-sec__banner-sec-wrapepr {
+  background: linear-gradient(90deg, rgba(19,12,90,.88) 0%, rgba(19,12,90,.74) 42%, rgba(19,12,90,.2) 72%, rgba(19,12,90,0) 100%);
+}
+@media (max-width: 767px) {
+  html body #main-search-route .front-sec__banner-sec-wrapepr {
+    background: linear-gradient(180deg, rgba(19,12,90,.86) 0%, rgba(19,12,90,.74) 60%, rgba(19,12,90,.58) 100%);
+  }
+}
+
+/* Hero: text must not run past the rounded card on narrow phones. */
+#main-search-route .front-sec__advantage { box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; }
+#main-search-route .front-sec__advantage-text { min-width: 0; flex: 1 1 auto; max-width: 100%; overflow-wrap: anywhere; }
+#main-search-route .front-sec__advantages { box-sizing: border-box; max-width: 100%; }
+
+/* Search panel: the class switch already sets the departure time, so the second control is redundant. */
+.search__time { display: none !important; }
+#et-cls-search { box-sizing: border-box; width: 100%; max-width: 100%; margin-left: 0 !important; margin-right: 0 !important; transform: none !important; }
+
+/* Mobile menu: scroll the whole panel, so contacts can no longer squeeze the links out of view. */
+@media (max-width: 1099px) {
+  .header__mobile { overflow-y: auto !important; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+  .header__mobile > .container, .header__mobile .header__mobile-wrapper { display: block !important; height: auto !important; max-height: none !important; overflow: visible !important; }
+  html.et-scroll-lock .header__mobile-active .header__mobile-nav,
+  .header__mobile .header__mobile-nav { flex: none !important; height: auto !important; max-height: none !important; overflow: visible !important; }
+  .header__mobile-contacts { height: auto !important; }
+
+  /* The phone number gets its own row and is never broken across lines. */
+  html body .header__mobile-contacts .et-mobile-contacts.contacts-body-sec__social-row { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 10px !important; overflow: visible !important; width: 100% !important; }
+  html body .header__mobile-contacts .et-mobile-contacts .et-mobile-contact.et-mobile-contact { box-sizing: border-box; min-width: 0 !important; width: auto !important; max-width: none !important; min-height: 52px; height: auto !important; padding: 12px 10px !important; flex: none !important; justify-content: center; }
+  html body .header__mobile-contacts .et-mobile-contacts .et-mobile-contact.et-mobile-contact--ph { grid-column: 1 / -1; white-space: nowrap; }
+  body.has-announce .header__mobile { padding-top: 96px !important; }
+  .et-mobile-mgr { box-sizing: border-box; max-width: 100%; }
+}
+@media (max-width: 379px) {
+  .et-mobile-mgr { grid-template-columns: 1fr; }
+  .et-mobile-mgr__links { grid-row: auto; margin-top: 6px; }
+}
+
+/* Popups: the legal text was wider than the popup and got clipped; the close icon was invisible. */
+.et-legal .et-legal__wrap { box-sizing: border-box; width: 100% !important; max-width: 100% !important; }
+.popup-air > .air-close { position: absolute !important; top: 12px; right: 12px; left: auto !important; bottom: auto !important; width: 40px !important; height: 40px !important; margin: 0 !important; display: flex; align-items: center; justify-content: center; color: #130c5a; z-index: 5; cursor: pointer; }
+.popup-air > .air-close ~ .air-close { display: none !important; }
+.popup-air .air-close::before { content: "\00d7"; font-size: 30px; line-height: 1; font-weight: 400; pointer-events: none; }
+
+/* Floating buttons: smaller at the widths where they would cover the page's side cards. */
+@media (min-width: 1100px) and (max-width: 1560px) {
+  #et-chat { left: 2px !important; }
+  #et-chat .et-chat__fab { width: 44px !important; height: 44px !important; }
+  .et-to-top { left: 4px !important; width: 40px !important; height: 40px !important; }
+}
+
+/* Contacts: five cards and four managers without a lone item on the last row. */
+@media (min-width: 1100px) { .et-contacts__grid { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; gap: 14px !important; } .et-ccard { padding: 18px !important; } .et-ccard__value { font-size: 16px !important; overflow-wrap: anywhere; } }
+@media (min-width: 900px) { .et-managers__list { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
+.et-ccard__value { overflow-wrap: anywhere; }
+.footer__tg-roles { display: flex; flex-direction: column; gap: 4px; margin: 10px 0 2px; }
+
+/* Mobile menu: a closed submenu must not peek out through its padding. */
+@media (max-width: 1099px) {
+  .header__mob-nav-ul > .menu-item-has-children:not(.active) > .sub-menu { max-height: 0 !important; padding: 0 !important; margin: 0 !important; overflow: hidden !important; border: 0 !important; }
+}
+
+/* Remove the empty strip between the sticky header and the hero. */
+body.has-announce main.main { padding-top: 60px !important; }
+@media (max-width: 767px) { body.has-announce main.main { padding-top: 52px !important; } }

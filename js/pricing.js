@@ -73,6 +73,13 @@
     var rd = w.__eurotourRouteData;
     if (rd && rd.KNOWN) d.querySelectorAll('.direction-element').forEach(function (card) { var f = card.getAttribute('data-from-name'), t = card.getAttribute('data-to-name'), q = quote(f, t); if (q) { rd.KNOWN[f + '|' + t] = q.amount; rd.KNOWN[t + '|' + f] = q.amount; } });
     if (rd) { rd.calcPriceByNames = function (f, t) { var q = quote(f, t); return q ? { amount: q.amount, source: 'time', from: q.from, to: q.to, hours: q.hours, cls: q.cls, eur: q.eur } : null; }; rd.roundPrice = function (n) { return Math.round(n); }; rd.formatPrice = fmt; rd.formatPriceLabel = function (n) { return 'Ціна ' + fmt(n) + ' грн'; }; }
+    // the ticker is built before prices are applied, so refresh it from the cards
+    d.querySelectorAll('.et-ticker__item').forEach(function (b) {
+      var pair = (b.getAttribute('data-route') || '').split('|');
+      var card = d.querySelector('.direction-element[data-from="' + pair[0] + '"][data-to="' + pair[1] + '"] .direction-element__price');
+      var val = b.querySelector('b');
+      if (card && val) val.textContent = card.textContent.trim();
+    });
     var mcta = d.querySelector('.et-mcta__main small');
     if (mcta) { var min = Infinity; d.querySelectorAll('.direction-element[data-price-uah]').forEach(function (c) { var v = +c.getAttribute('data-price-uah'); if (v && v < min) min = v; }); if (isFinite(min)) mcta.textContent = 'від ' + fmt(min) + ' грн'; }
   }

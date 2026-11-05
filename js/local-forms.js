@@ -189,7 +189,7 @@
     wrap.className = 'et-phone-intl';
 
     var sel = document.createElement('select');
-    sel.className = 'et-phone-intl__country';
+    sel.className = 'et-phone-intl__country'; sel.setAttribute('aria-label', 'Код країни');
     sel.setAttribute('aria-label', 'Код країни');
     PHONE_COUNTRIES.forEach(function (c) {
       var opt = document.createElement('option');

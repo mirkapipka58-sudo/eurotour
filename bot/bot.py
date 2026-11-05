@@ -22,6 +22,16 @@ import urllib.request
 import urllib.parse
 import urllib.error
 import threading
+import re
+from collections import deque
+
+try:
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+except ImportError:  # the Telegram admin part still works; the site bridge refuses to start
+    AESGCM = None
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 
@@ -44,7 +54,9 @@ GH_REPO = os.environ.get("GH_REPO", "Pashawilliams/site")
 GH_BRANCH = os.environ.get("GH_BRANCH", "main")
 DATA_PATH = "data/site.json"
 STATE_PATH = "bot/state.json"
-SITE_URL = os.environ.get("SITE_URL", "https://eurotour.pp.ua/")
+SITE_URL = os.environ.get("SITE_URL", "https://eurotour.kyiv.ua/")
+BRIDGE_PRIVATE_KEY = os.environ.get("BRIDGE_PRIVATE_KEY", "").strip()
+MAX_ATTACHMENT = 5 * 1024 * 1024
 try:
     MAX_RUNTIME = int(os.environ.get("MAX_RUNTIME", str(5 * 3600 + 20 * 60)))  # 5h20m
 except Exception:
@@ -485,9 +497,10 @@ def faq_view(msg_id=None):
 def contacts_view(msg_id=None):
     c = store.data["contacts"]
     txt = (f"<b>Контакти</b>\nТелефон: {esc(c.get('phone',''))} (показ: {esc(c.get('phone_display',''))})\n"
-           f"Telegram: {esc(c.get('telegram',''))}\nWhatsApp: {esc(c.get('whatsapp',''))}\nПідпис: {esc(c.get('support_note',''))}")
+           f"Telegram (адміністратор): {esc(c.get('telegram',''))}\nTelegram (власник): {esc(c.get('telegram_owner',''))}\nWhatsApp: {esc(c.get('whatsapp',''))}\nПідпис: {esc(c.get('support_note',''))}")
     kb = ikb([
-        [("📱 Телефон", "cset:phone"), ("✈️ Telegram", "cset:telegram")],
+        [("📱 Телефон", "cset:phone"), ("✈️ TG адміністратор", "cset:telegram")],
+        [("👑 TG власник", "cset:telegram_owner")],
         [("💬 WhatsApp", "cset:whatsapp"), ("📝 Підпис у шапці", "cset:support_note")],
         [("👤 Менеджери", "managers"), ("⬅️ Меню", "main")],
     ])
@@ -755,10 +768,10 @@ def fmt_contact(val):
         return "Гість"
     s = str(val).strip()
     if s.startswith("@"):
-        uname = s[1:]
+        uname = esc(s[1:])
         return f'<a href="https://t.me/{uname}">@{uname}</a>'
     if s.startswith("https://t.me/") or s.startswith("t.me/"):
-        uname = s.split("/")[-1].lstrip("@")
+        uname = esc(s.split("/")[-1].lstrip("@"))
         return f'<a href="https://t.me/{uname}">@{uname}</a>'
     digits = "".join(ch for ch in s if ch.isdigit())
     if len(digits) >= 10:
@@ -778,31 +791,103 @@ def chat_view(sidv, msg_id=None):
     (edit if msg_id else send)(*((msg_id, txt[:4000], chat_kb(sidv)) if msg_id else (txt[:4000], chat_kb(sidv))))
 
 
+def bridge_private_key():
+    if AESGCM is None or not BRIDGE_PRIVATE_KEY:
+        return None
+    try:
+        return ec.derive_private_key(int.from_bytes(base64.b64decode(BRIDGE_PRIVATE_KEY), "big"), ec.SECP256R1())
+    except Exception:
+        log.error("BRIDGE_PRIVATE_KEY is invalid")
+        return None
+
+
+def open_envelope(text, key):
+    """Decrypt a visitor message sealed by js/et-crypto.js. Returns a dict, or None."""
+    try:
+        env = json.loads(text)
+        if not isinstance(env, dict) or env.get("v") != 2:
+            return None
+        peer = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), base64.b64decode(env["e"]))
+        shared = key.exchange(ec.ECDH(), peer)
+        aes = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"eurotour-bridge-v2").derive(shared)
+        plain = AESGCM(aes).decrypt(base64.b64decode(env["i"]), base64.b64decode(env["c"]), None)
+        ev = json.loads(plain.decode("utf-8"))
+        return ev if isinstance(ev, dict) else None
+    except Exception:
+        return None
+
+
+def valid_reply_key(val):
+    try:
+        return isinstance(val, str) and len(base64.b64decode(val, validate=True)) == 32
+    except Exception:
+        return False
+
+
+def seal_reply(rk, payload):
+    iv = os.urandom(12)
+    ct = AESGCM(base64.b64decode(rk)).encrypt(iv, json.dumps(payload, ensure_ascii=False).encode("utf-8"), None)
+    return json.dumps({"v": 2, "i": base64.b64encode(iv).decode(), "c": base64.b64encode(ct).decode()})
+
+
+def reply_key(sidv):
+    return (store.state.get("rkeys") or {}).get(sidv)
+
+
+def remember_reply_key(sidv, rk):
+    keys = store.state.setdefault("rkeys", {})
+    if keys.get(sidv) == rk:
+        return
+    keys.pop(sidv, None)
+    keys[sidv] = rk
+    while len(keys) > 2000:
+        keys.pop(next(iter(keys)))
+    mark_dirty()
+
+
+def reply_topic(sidv):
+    return store.data.get("bridge", {}).get("inbox", "") + "-r-" + sidv
+
+
+def post_sealed(sidv, rk, payload, cache=True):
+    headers = {"Content-Type": "application/json"}
+    if not cache:
+        headers["Cache"] = "no"
+    req = urllib.request.Request(NTFY + reply_topic(sidv), data=seal_reply(rk, payload).encode(), headers=headers, method="POST")
+    urllib.request.urlopen(req, timeout=20).read()
+
+
 def signal_visitor(sidv, payload):
     """Send a lightweight event (typing/seen) to the visitor without storing it."""
-    topic = store.data.get("bridge", {}).get("inbox", "") + "-r-" + sidv
+    rk = reply_key(sidv)
+    if not rk:
+        return
     try:
-        req = urllib.request.Request(NTFY + topic, data=json.dumps(payload).encode(), headers={"Content-Type": "application/json", "Title": "event", "Cache": "no"}, method="POST")
-        urllib.request.urlopen(req, timeout=10).read()
+        post_sealed(sidv, rk, payload, cache="text" in payload)
     except Exception as e:
         log.debug("signal failed: %s", e)
 
 
 def reply_to_visitor(sidv, text, file=None):
-    """file = (bytes, filename, mime) → uploaded as ntfy attachment."""
+    """file = (bytes, filename, mime) → encrypted and uploaded as an ntfy attachment."""
     c = store.state.setdefault("chats", {}).setdefault(sidv, {"msgs": [], "name": "", "page": "", "last": ""})
-    topic = store.data.get("bridge", {}).get("inbox", "") + "-r-" + sidv
+    rk = reply_key(sidv)
+    if not rk:
+        # A session from before encryption: refuse to send plaintext to a public topic.
+        log.warning("no reply key for a visitor session")
+        return False
     payload = {"text": text or "", "by": admin_name(), "ts": dt.datetime.utcnow().isoformat()}
     try:
         if file:
             data, fname, mime = file
-            enc = "=?UTF-8?B?" + base64.b64encode(json.dumps(payload, ensure_ascii=False).encode()).decode() + "?="
-            req = urllib.request.Request(NTFY + topic, data=data, headers={"Title": "reply", "Filename": fname, "Message": enc, "Content-Type": mime or "application/octet-stream"}, method="PUT")
+            iv = os.urandom(12)
+            ct = AESGCM(base64.b64decode(rk)).encrypt(iv, data, None)
+            payload["file"] = {"name": fname, "type": mime or "application/octet-stream", "size": len(data), "iv": base64.b64encode(iv).decode()}
+            req = urllib.request.Request(NTFY + reply_topic(sidv), data=ct, headers={"Filename": "data.bin", "Message": seal_reply(rk, payload), "Content-Type": "application/octet-stream"}, method="PUT")
             urllib.request.urlopen(req, timeout=120).read()
             c["msgs"].append({"dir": "out", "text": (text or "") + f" 📎 {fname}", "ts": payload["ts"], "by": cur_chat()})
         else:
-            req = urllib.request.Request(NTFY + topic, data=json.dumps(payload, ensure_ascii=False).encode(), headers={"Content-Type": "application/json", "Title": "reply"}, method="POST")
-            urllib.request.urlopen(req, timeout=20).read()
+            post_sealed(sidv, rk, payload)
             c["msgs"].append({"dir": "out", "text": text, "ts": payload["ts"], "by": cur_chat()})
         c["msgs"] = c["msgs"][-60:]
         c["last"] = dt.datetime.utcnow().isoformat()
@@ -940,9 +1025,87 @@ def fmt_lead(ev):
     return "\n".join(lines)
 
 
+# The public key is public by design, so anyone can send a well-formed message.
+# These limits keep forged traffic from flooding the admins.
+_rate_lock = threading.Lock()
+_rate_sid = {}
+_rate_global = deque()
+_rate_warned = 0.0
+RATE_SID_PER_MIN = 30
+RATE_GLOBAL_PER_10MIN = 200
+SID_RE = re.compile(r"^[0-9a-f]{16}$")
+
+
+def allow_event(sidv, kind):
+    global _rate_warned
+    if kind == "chat_typing":
+        return True
+    now = time.time()
+    warn = False
+    with _rate_lock:
+        q = _rate_sid.setdefault(sidv, deque())
+        while q and now - q[0] > 60:
+            q.popleft()
+        while _rate_global and now - _rate_global[0] > 600:
+            _rate_global.popleft()
+        if len(q) >= RATE_SID_PER_MIN:
+            return False
+        if len(_rate_global) >= RATE_GLOBAL_PER_10MIN:
+            if now - _rate_warned > 3600:
+                _rate_warned = now
+                warn = True
+            allowed = False
+        else:
+            q.append(now)
+            _rate_global.append(now)
+            allowed = True
+        if len(_rate_sid) > 5000:
+            _rate_sid.clear()
+    if warn:
+        broadcast("⚠️ Забагато подій із сайту за 10 хвилин. Частину відкинуто: можливий спам.")
+    return allowed
+
+
+def fetch_attachment(att, limit=MAX_ATTACHMENT):
+    url = str((att or {}).get("url") or "")
+    if not url.startswith(NTFY + "file/"):
+        raise ValueError("unexpected attachment url")
+    req = urllib.request.Request(url, headers={"User-Agent": "eurotour-admin-bot"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        data = r.read(limit + 1)
+    if len(data) > limit:
+        raise ValueError("attachment too large")
+    return data
+
+
+def decode_bridge_message(d, key):
+    """Turn one ntfy event into a decrypted event, or None. Plaintext is never accepted."""
+    text = d.get("message") or ""
+    if not text.startswith("{") and d.get("attachment"):
+        # ntfy stores bodies above 4 KB as an attachment
+        text = fetch_attachment(d["attachment"], 256 * 1024).decode("utf-8", "ignore")
+    ev = open_envelope(text, key)
+    if not ev or not SID_RE.match(str(ev.get("sid") or "")) or not valid_reply_key(ev.get("rk")):
+        return None
+    f = ev.get("file")
+    if isinstance(f, dict) and d.get("attachment"):
+        ct = fetch_attachment(d["attachment"])
+        data = AESGCM(base64.b64decode(f["key"])).decrypt(base64.b64decode(f["iv"]), ct, None)
+        ev["attachment"] = {"name": str(f.get("name") or "file.bin")[:120], "type": str(f.get("type") or "")[:100], "size": len(data), "data": data}
+    return ev
+
+
 def on_bridge_event(ev):
     kind = ev.get("kind")
     sidv = str(ev.get("sid") or "")[:16]
+    rk = ev.pop("rk", None)
+    if kind == "ping":  # health check: answers without storing anything or notifying admins
+        if allow_event(sidv, kind):
+            post_sealed(sidv, rk, {"pong": str(ev.get("nonce") or "")[:40]}, cache=True)
+        return
+    if not allow_event(sidv, kind):
+        return
+    remember_reply_key(sidv, rk)
     if kind == "lead":
         _l = ev.get("lead") or {}
         _f = _l.get("fields") or {}
@@ -1009,7 +1172,7 @@ def on_bridge_event(ev):
             head = "💬 <b>Нове повідомлення з сайту</b>" if not ev.get("first") else "💬 <b>Новий чат з сайту</b>"
             body = f"{head}\n<b>{fmt_contact(name)}</b> · #chat_{sidv}\n\n{esc(text)}"
             if att:
-                body += f"\n📎 <a href=\"{esc(att.get('url',''))}\">{esc(att.get('name') or 'файл')}</a> ({(att.get('size') or 0)//1024} КБ)"
+                body += f"\n📎 {esc(att.get('name') or 'файл')} ({(att.get('size') or 0)//1024} КБ)"
             send(body, chat_kb(sidv, in_dialog=False), chat_id=uid)
             if att:
                 _send_attachment(uid, att, None)
@@ -1020,19 +1183,17 @@ def on_bridge_event(ev):
 
 def _send_attachment(uid, att, caption):
     """Mirror a visitor attachment into Telegram (photo/document by direct download & upload or URL)."""
-    url = att.get("url")
-    if not url:
+    file_bytes = att.get("data")
+    if not file_bytes:
         return
     cap = (caption or "")[:1000]
     typ = att.get("type") or ""
-    fname = att.get("name") or ("image.jpg" if typ.startswith("image/") else "file.bin")
+    fname = re.sub(r'[\x00-\x1f"\\/]+', "_", att.get("name") or ("image.jpg" if typ.startswith("image/") else "file.bin"))
+    typ = re.sub(r"[^\w/.+-]", "", typ)
     is_img = typ.startswith("image/") or fname.lower().endswith((".jpg", ".jpeg", ".png", ".webp", ".gif"))
 
     # 1. Try direct download & multipart upload to Telegram
     try:
-        req_dl = urllib.request.Request(url, headers={"User-Agent": "eurotour-admin-bot"})
-        with urllib.request.urlopen(req_dl, timeout=30) as r:
-            file_bytes = r.read()
         
         if file_bytes and len(file_bytes) > 0:
             method = "sendPhoto" if (is_img and len(file_bytes) <= 10 * 1024 * 1024) else "sendDocument"
@@ -1058,20 +1219,8 @@ def _send_attachment(uid, att, caption):
     except Exception as e:
         log.warning("direct attachment download/upload failed: %s", e)
 
-    # 2. Fallback: ask Telegram to fetch via URL
-    try:
-        if is_img and (att.get("size") or 0) < 10 * 1024 * 1024:
-            r = tg("sendPhoto", chat_id=uid, photo=url, caption=cap)
-            if r.get("ok"):
-                return
-        r = tg("sendDocument", chat_id=uid, document=url, caption=cap)
-        if r.get("ok"):
-            return
-    except Exception as e:
-        log.warning("url attachment send failed: %s", e)
-
-    # 3. Fallback: send as clickable HTML link
-    send(f"📎 <a href=\"{esc(url)}\">{esc(fname)}</a>" + (f"\n{esc(cap)}" if cap else ""), chat_id=uid)
+    # The file only exists decrypted here, so there is no URL to fall back on.
+    send(f"📎 Не вдалося показати файл: {esc(fname)}" + (f"\n{esc(cap)}" if cap else ""), chat_id=uid)
 
 
 def bridge_listener(stop):
@@ -1079,6 +1228,10 @@ def bridge_listener(stop):
     topic = (store.data or {}).get("bridge", {}).get("inbox")
     if not topic:
         log.warning("bridge inbox not configured")
+        return
+    key = bridge_private_key()
+    if key is None:
+        log.error("bridge disabled: BRIDGE_PRIVATE_KEY or the cryptography package is missing")
         return
     since = store.state.get("bridge_since") or "5m"
     while not stop["flag"]:
@@ -1100,12 +1253,9 @@ def bridge_listener(stop):
                     since = d.get("id") or since
                     store.state["bridge_since"] = since
                     try:
-                        ev = json.loads(d.get("message") or "{}")
-                    except Exception:
-                        ev = {"kind": "raw", "text": d.get("message")}
-                    if d.get("attachment") and not ev.get("attachment"):
-                        ev["attachment"] = d["attachment"]
-                    try:
+                        ev = decode_bridge_message(d, key)
+                        if ev is None:
+                            continue
                         on_bridge_event(ev)
                     except Exception:
                         log.exception("bridge event failed")
@@ -1280,7 +1430,7 @@ def handle_callback(cq):
         return contacts_view(msg_id)
     if data.startswith("cset:"):
         field = data.split(":")[1]
-        hints = {"phone": "Номер: <code>+380XXXXXXXXX</code>", "telegram": "Посилання t.me/…", "whatsapp": "Посилання wa.me/… або «auto»", "support_note": "Підпис у шапці:"}
+        hints = {"phone": "Номер: <code>+380XXXXXXXXX</code>", "telegram": "Посилання t.me/…", "telegram_owner": "Посилання t.me/…", "whatsapp": "Посилання wa.me/… або «auto»", "support_note": "Підпис у шапці:"}
         return ask("cset", hints[field], field=field)
     if data == "hero":
         return hero_view(msg_id)
