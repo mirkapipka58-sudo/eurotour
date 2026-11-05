@@ -14,7 +14,7 @@ This repository is public and the site is deployed through GitHub Pages. Do not 
 1. Rotate any GitHub PAT that was ever pasted into chat or logs.
 2. Add a strong GitHub Actions secret named `STATE_SECRET` if encrypted chat/lead persistence is needed across bot restarts.
 3. After changing `STATE_SECRET` or the bridge inbox, manually restart the `Telegram admin bot` workflow.
-4. Check GitHub Pages custom domain HTTPS: the certificate must be issued for `eurotour.pp.ua`, not only for `*.github.io`.
+4. Check GitHub Pages custom domain HTTPS: the certificate must be issued for `eurotour.kyiv.ua`, not only for `*.github.io`.
 
 ## Generate STATE_SECRET locally
 

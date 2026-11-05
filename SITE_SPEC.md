@@ -12,7 +12,7 @@
 ## 2. Технологии и хостинг
 - **Чистые HTML + CSS + JS** (без фреймворков и сборки). Всё статично.
 - Хостинг: **GitHub Pages** из ветки `main` репозитория `Pashawilliams/site`, деплой через GitHub Actions (`.github/workflows/deploy.yml`, ~2 мин).
-- Домен: `eurotour.pp.ua` (NIC.UA), файл `CNAME` в корне репозитория; DNS: 4 A‑записи GitHub (185.199.108–111.153) + `www` CNAME → `pashawilliams.github.io.`
+- Домен: `eurotour.kyiv.ua` (NIC.UA), файл `CNAME` в корне репозитория; DNS: 4 A‑записи GitHub (185.199.108–111.153) + `www` CNAME → `pashawilliams.github.io.`
 - Бэкенд отсутствует. Вместо него:
   - **`data/site.json`** — «база данных» контента (правится ботом, читается сайтом);
   - **ntfy.sh** (бесплатный pub/sub по HTTP) — канал сообщений сайт ↔ бот (заявки, чат, файлы);
