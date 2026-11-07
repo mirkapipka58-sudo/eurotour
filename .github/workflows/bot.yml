@@ -78,7 +78,11 @@ jobs:
       - name: Restart myself
         if: always() && steps.guard.outputs.skip != 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Use a PAT so the self-chain actually starts a new run. A workflow
+          # dispatched with the default GITHUB_TOKEN is suppressed by GitHub's
+          # recursion guard and would never restart; GH_PAT bypasses that. Falls
+          # back to GITHUB_TOKEN (the 30-min cron watchdog is the safety net).
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           ADMIN_CHAT: ${{ secrets.ADMIN_ID }}
         run: |
