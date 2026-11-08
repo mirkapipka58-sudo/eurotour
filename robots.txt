@@ -3,4 +3,4 @@ Disallow: /bot/
 Disallow: /.github/
 Disallow: /_archive/
 Allow: /
-Sitemap: https://Eurotour.in.ua/sitemap.xml
+Sitemap: https://eurotour.in.ua/sitemap.xml

@@ -65,7 +65,7 @@ jobs:
           GH_FALLBACK_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           GH_BRANCH: main
-          SITE_URL: https://Eurotour.in.ua/
+          SITE_URL: https://eurotour.in.ua/
           MAX_RUNTIME: "19200"
           # Optional but recommended: add repository secret STATE_SECRET to store
           # bot/state.json encrypted instead of only public-redacted runtime offsets.
