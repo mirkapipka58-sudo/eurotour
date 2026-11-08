@@ -54,7 +54,7 @@ GH_REPO = os.environ.get("GH_REPO", "Pashawilliams/site")
 GH_BRANCH = os.environ.get("GH_BRANCH", "main")
 DATA_PATH = "data/site.json"
 STATE_PATH = "bot/state.json"
-SITE_URL = os.environ.get("SITE_URL", "https://eurotour.kyiv.ua/")
+SITE_URL = os.environ.get("SITE_URL", "https://Eurotour.in.ua/")
 BRIDGE_PRIVATE_KEY = os.environ.get("BRIDGE_PRIVATE_KEY", "").strip()
 MAX_ATTACHMENT = 5 * 1024 * 1024
 try:

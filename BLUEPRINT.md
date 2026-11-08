@@ -2,7 +2,7 @@
 
 > Документ описывает **что** сделано, **как** это устроено и **какими данными** наполнено, чтобы воспроизвести такой же сайт с тем же функционалом, ценами и модулями. Технический разбор файлов — в `SITE_SPEC.md`; здесь — «рецепт».
 > Важно: обмен сайта с ботом теперь зашифрован, актуальная схема описана в `SECURITY.md`. Где ниже сказано про секретный топик и открытый JSON, это устарело.
-> Живой сайт: http://eurotour.kyiv.ua · репозиторий: `Pashawilliams/site` (GitHub Pages).
+> Живой сайт: http://Eurotour.in.ua · репозиторий: `Pashawilliams/site` (GitHub Pages).
 
 ---
 
@@ -25,7 +25,7 @@
 | Telegram → сайт | ntfy.sh, топик ответа `<inbox>-r-<sid>` на каждого посетителя; сайт слушает через EventSource `/sse` | 0 |
 | Время в пути | OSRM public API (`router.project-osrm.org`) + координаты городов | 0 |
 | Курс €→₴ | API НБУ `bank.gov.ua/NBUStatService/v1/statdirectory/exchange?valcode=EUR&json` | 0 |
-| Домен | `eurotour.kyiv.ua` (NIC.UA), A-записи на IP GitHub Pages, `www` CNAME → `<user>.github.io.`, файл `CNAME` в корне | домен |
+| Домен | `Eurotour.in.ua` (NIC.UA), A-записи на IP GitHub Pages, `www` CNAME → `<user>.github.io.`, файл `CNAME` в корне | домен |
 
 **Секреты GitHub (Settings → Secrets → Actions):** `BOT_TOKEN` (токен бота от @BotFather), `ADMIN_ID` (числовой Telegram id владельца), `GH_PAT` (personal access token с правом `repo`, бот им коммитит).
 
@@ -37,7 +37,7 @@
 /
 ├── index.html                 главная (одна страница, все секции)
 ├── chat.html                  отдельная страница онлайн-чата
-├── CNAME                      eurotour.kyiv.ua
+├── CNAME                      Eurotour.in.ua
 ├── data/site.json             ВЕСЬ контент сайта (см. §4)
 ├── css/
 │   ├── main.min.css, style*.css, styles*.css   исходная тема (лендинг перевозчика)
