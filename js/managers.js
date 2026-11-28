@@ -3,7 +3,7 @@
 (function () {
   'use strict';
   var DEFAULT = [
-    { name: 'Олексій', role: 'Менеджер з перевезень', phone: '+380636881604', telegram: 'https://t.me/+380636881604', whatsapp: 'https://wa.me/380636881604' }
+    { name: 'Олексій', role: 'Менеджер з перевезень', phone: '+380636881604', phone2: '+380737898642', telegram: 'https://t.me/+380636881604', whatsapp: 'https://wa.me/380636881604' }
   ];
   var managers = DEFAULT.slice();
   var ICON = {

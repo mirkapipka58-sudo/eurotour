@@ -545,9 +545,15 @@ def contacts_view(msg_id=None):
     (edit if msg_id else send)(*((msg_id, txt, kb) if msg_id else (txt, kb)))
 
 
+def _fmt_phone(p):
+    d = "".join(ch for ch in (p or "") if ch.isdigit())
+    return f"+{d[:3]} {d[3:5]} {d[5:8]} {d[8:10]} {d[10:]}".strip() if len(d) == 12 else (p or "")
+
+
 def _mgr_fmt(m):
-    d = "".join(ch for ch in m.get("phone", "") if ch.isdigit())
-    ph = f"+{d[:3]} {d[3:5]} {d[5:8]} {d[8:10]} {d[10:]}".strip() if len(d) == 12 else m.get("phone", "")
+    ph = _fmt_phone(m.get("phone", ""))
+    if m.get("phone2"):
+        ph += ", " + _fmt_phone(m["phone2"])
     return f"<b>{esc(m.get('name',''))}</b> — {esc(ph)}\n<i>{esc(m.get('role',''))}</i>"
 
 
@@ -569,7 +575,8 @@ def manager_view(i, msg_id=None):
     txt = (f"{_mgr_fmt(m)}\nTelegram: {esc(m.get('telegram','') or 'авто (за номером)')}\nWhatsApp: {esc(m.get('whatsapp','') or 'авто (за номером)')}")
     kb = ikb([
         [("✏️ Ім'я", f"mset:{i}:name"), ("✏️ Посада", f"mset:{i}:role")],
-        [("📱 Телефон", f"mset:{i}:phone"), ("✈️ Telegram", f"mset:{i}:telegram"), ("💬 WhatsApp", f"mset:{i}:whatsapp")],
+        [("📱 Телефон", f"mset:{i}:phone"), ("📱 Телефон 2", f"mset:{i}:phone2")],
+        [("✈️ Telegram", f"mset:{i}:telegram"), ("💬 WhatsApp", f"mset:{i}:whatsapp")],
         [("⬆️ Вище", f"mup:{i}"), ("🗑 Видалити", f"mdel:{i}"), ("⬅️ Назад", "managers")],
     ])
     (edit if msg_id else send)(*((msg_id, txt, kb) if msg_id else (txt, kb)))
@@ -1421,7 +1428,7 @@ def handle_callback(cq):
         return ask("mgr_add", "Надішліть дані менеджера (кожне з нового рядка):\n<code>Ім'я\n+380XXXXXXXXX\nПосада (необов'язково)\nПосилання Telegram (необов'язково)\nПосилання WhatsApp (необов'язково)</code>\n\nПриклад:\n<code>Олексій\n+380636881604\nМенеджер з перевезень\nhttps://t.me/pereviznyk_support</code>")
     if data.startswith("mset:"):
         _, i, field = data.split(":")
-        hints = {"name": "Нове ім'я:", "role": "Нова посада:", "phone": "Номер: <code>+380XXXXXXXXX</code>", "telegram": "Посилання t.me/… або «auto»", "whatsapp": "Посилання wa.me/… або «auto»"}
+        hints = {"name": "Нове ім'я:", "role": "Нова посада:", "phone": "Номер: <code>+380XXXXXXXXX</code>", "phone2": "Другий номер: <code>+380XXXXXXXXX</code> або «-», щоб видалити", "telegram": "Посилання t.me/… або «auto»", "whatsapp": "Посилання wa.me/… або «auto»"}
         return ask("mset", hints[field], i=int(i), field=field)
     if data.startswith("mup:"):
         i = int(data.split(":")[1])
@@ -1707,6 +1714,14 @@ def handle_text(text):
                     m["whatsapp"] = "https://wa.me/" + d
                 if not m.get("telegram") or "t.me/+" in m.get("telegram", ""):
                     m["telegram"] = "https://t.me/+" + d
+            elif f == "phone2":
+                if v in ("-", "—", "0", "del", "видалити"):
+                    m.pop("phone2", None)
+                else:
+                    d2 = "".join(ch for ch in v if ch.isdigit())
+                    if len(d2) < 10:
+                        raise ValueError("phone")
+                    m["phone2"] = "+" + d2
             elif f == "telegram" and v.lower() == "auto":
                 m["telegram"] = "https://t.me/+" + d
             elif f == "whatsapp" and v.lower() == "auto":

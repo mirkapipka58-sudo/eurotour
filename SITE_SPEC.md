@@ -94,7 +94,7 @@ CSS‑переменные:
 {
  "site": {"name","tagline","maintenance":false,"announcement":{"enabled","text","link"}},
  "contacts": {"phone","phone_display","telegram","whatsapp","support_note"},
- "managers": [{"name","role","phone","telegram","whatsapp"}],
+ "managers": [{"name","role","phone","phone2","telegram","whatsapp"}],
  "hero": {"title","subtitle"},
  "advantages": ["..."],
  "routes": [{"from","to","price","old_price","badge","visible"}],
